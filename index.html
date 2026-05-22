@@ -85,13 +85,13 @@
             }
 
             btn.disabled = true;
-            statusBox.innerHTML = "Lade temporäres Icon hoch...";
+            statusBox.innerHTML = "Lade Icon hoch (kann bei großen Bildern kurz dauern)...";
 
             try {
                 const file = fileInput.files[0];
                 const base64Icon = await toBase64(file);
 
-                // Schritt 1: Prüfen, ob die Datei existiert (wegen SHA für Überschreiben)
+                // 1. SHA der existierenden Datei prüfen (wichtig zum Überschreiben)
                 let sha = null;
                 const fileCheckUrl = `https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/contents/${TEMP_FILE_NAME}`;
                 const checkResponse = await fetch(fileCheckUrl, {
@@ -102,7 +102,7 @@
                     sha = checkData.sha;
                 }
 
-                // Schritt 2: Temporäres Icon direkt ins Repo hochladen via API
+                // 2. Icon als Datei hochladen (Das API-Dateilimit ist viel höher als das Input-Limit!)
                 const uploadResponse = await fetch(fileCheckUrl, {
                     method: 'PUT',
                     headers: {
@@ -110,7 +110,7 @@
                         'Content-Type': 'application/json'
                     },
                     body: JSON.stringify({
-                        message: "chore: Temporäres Release-Icon für Build hochgeladen",
+                        message: "chore: Temporäres Release-Icon hochgeladen",
                         content: base64Icon,
                         branch: "main",
                         ...(sha && { sha: sha })
@@ -125,7 +125,7 @@
                 btn.innerText = "Starte GitHub Action...";
                 statusBox.innerHTML = "Trigger Pipeline...";
 
-                // Schritt 3: GitHub Workflow triggern
+                // 3. GitHub Workflow ohne das schwere Base64-Feld starten
                 const response = await fetch(`https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/actions/workflows/${WORKFLOW_NAME}/dispatches`, {
                     method: 'POST',
                     headers: {
@@ -142,7 +142,7 @@
                 });
 
                 if (response.ok) {
-                    statusBox.innerHTML = "<span class='success'>✅ Icon hochgeladen & Build erfolgreich gestartet!</span>";
+                    statusBox.innerHTML = "<span class='success'>✅ Bild übertragen & Build gestartet! Verfolge den Status bei GitHub Actions.</span>";
                     document.getElementById('icon-upload').value = "";
                 } else {
                     const errData = await response.json();
