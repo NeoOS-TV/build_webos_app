@@ -67,10 +67,10 @@
     </div>
 
     <script>
-        // Konfiguration: Trage hier deinen GitHub-Benutzernamen und den Repo-Namen ein!
         const GH_OWNER = "NeoOS-TV";
         const GH_REPO = "neoos-apps";
         const WORKFLOW_NAME = "build_webos.yml";
+        const TEMP_FILE_NAME = "tmp_release_icon.png";
 
         async function startBuild() {
             const token = document.getElementById('gh-token').value.trim();
@@ -85,17 +85,47 @@
             }
 
             btn.disabled = true;
-            btn.innerText = "Verarbeite Bild...";
-            statusBox.innerHTML = "";
+            statusBox.innerHTML = "Lade temporäres Icon hoch...";
 
             try {
-                // 1. Bild in Base64 umwandeln
                 const file = fileInput.files[0];
                 const base64Icon = await toBase64(file);
 
-                btn.innerText = "Starte GitHub Action...";
+                // Schritt 1: Prüfen, ob die Datei existiert (wegen SHA für Überschreiben)
+                let sha = null;
+                const fileCheckUrl = `https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/contents/${TEMP_FILE_NAME}`;
+                const checkResponse = await fetch(fileCheckUrl, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (checkResponse.ok) {
+                    const checkData = await checkResponse.json();
+                    sha = checkData.sha;
+                }
 
-                // 2. GitHub API aufrufen, um den Workflow zu triggern
+                // Schritt 2: Temporäres Icon direkt ins Repo hochladen via API
+                const uploadResponse = await fetch(fileCheckUrl, {
+                    method: 'PUT',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        message: "chore: Temporäres Release-Icon für Build hochgeladen",
+                        content: base64Icon,
+                        branch: "main",
+                        ...(sha && { sha: sha })
+                    })
+                });
+
+                if (!uploadResponse.ok) {
+                    const errUpload = await uploadResponse.json();
+                    throw new Error(`Icon-Upload fehlgeschlagen: ${errUpload.message}`);
+                }
+
+                btn.innerText = "Starte GitHub Action...";
+                statusBox.innerHTML = "Trigger Pipeline...";
+
+                // Schritt 3: GitHub Workflow triggern
                 const response = await fetch(`https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/actions/workflows/${WORKFLOW_NAME}/dispatches`, {
                     method: 'POST',
                     headers: {
@@ -104,20 +134,19 @@
                         'Content-Type': 'application/json'
                     },
                     body: JSON.stringify({
-                        ref: 'main', // oder dein Standard-Branch
+                        ref: 'main',
                         inputs: {
-                            app_folder: appFolder,
-                            release_icon_base64: base64Icon
+                            app_folder: appFolder
                         }
                     })
                 });
 
                 if (response.ok) {
-                    statusBox.innerHTML = "<span class='success'>✅ Build erfolgreich gestartet! Schau auf GitHub unter 'Actions' nach.</span>";
-                    document.getElementById('icon-upload').value = ""; // Feld leeren
+                    statusBox.innerHTML = "<span class='success'>✅ Icon hochgeladen & Build erfolgreich gestartet!</span>";
+                    document.getElementById('icon-upload').value = "";
                 } else {
                     const errData = await response.json();
-                    statusBox.innerHTML = `<span class='error'>❌ Fehler: ${errData.message}</span>`;
+                    statusBox.innerHTML = `<span class='error'>❌ Workflow-Fehler: ${errData.message}</span>`;
                 }
             } catch (error) {
                 statusBox.innerHTML = `<span class='error'>❌ Systemfehler: ${error.message}</span>`;
@@ -127,7 +156,6 @@
             }
         }
 
-        // Hilfsfunktion: Wandelt Datei in reinen Base64-String um
         const toBase64 = file => new Promise((resolve, reject) => {
             const reader = new FileReader();
             reader.readAsDataURL(file);
